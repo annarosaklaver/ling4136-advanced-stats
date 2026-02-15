@@ -87,8 +87,110 @@ Build that model with the appropriate random effect structure, taking into accou
 ```{r}
 #| label: glmer_incomplete
 
-# YOUR CODE HERE
+# construct glmem with maximal random effects structure
+voicing_mdl <- glmer(chosen_voicing ~ correct_voicing + 
+                       # random intercepts and slopes for listeners
+                       (1 + correct_voicing | listener) +
+                       # random intercepts and slopes for speakers
+                       (1 + correct_voicing | voice) +
+                       # random intercepts and slopes for word pairs
+                       (1 + correct_voicing | item_pair) +
+                       # random intercepts and slopes for trial order
+                       (1 + correct_voicing | order),
+                     data = incomplete,
+                     family = 'binomial')
+# singular fit, check distributions across grouping variables to decide which slopes to drop
 
+# listener distribution:
+listener_summary <- incomplete |>
+  group_by(listener) |>
+  summarise(correct = sum(correct_voicing == 'voiceless', na.rm = TRUE) / n(),
+            chosen = sum(chosen_voicing == 'voiceless', na.rm = TRUE) / n())
+listener_summary
+barplot(listener_summary$chosen)
+sd(listener_summary$chosen) # = 0.044
+
+# speaker distribution:
+speaker_summary <- incomplete |>
+  group_by(voice) |>
+  summarise(correct = sum(correct_voicing == 'voiceless', na.rm = TRUE) / n(),
+            chosen = sum(chosen_voicing == 'voiceless', na.rm = TRUE) / n())
+speaker_summary
+barplot(speaker_summary$chosen)
+sd(speaker_summary$chosen) # = 0.187
+
+# word pair distribution:
+pair_summary <- incomplete |>
+  group_by(item_pair) |>
+  summarise(correct = sum(correct_voicing == 'voiceless', na.rm = TRUE) / n(),
+            chosen = sum(chosen_voicing == 'voiceless', na.rm = TRUE) / n())
+pair_summary
+barplot(pair_summary$chosen)
+sd(pair_summary$chosen) # = 0.185
+
+# trial order distribution:
+order_summary <- incomplete |>
+  group_by(order) |>
+  summarise(correct = sum(correct_voicing == 'voiceless', na.rm = TRUE) / n(),
+            chosen = sum(chosen_voicing == 'voiceless', na.rm = TRUE) / n())
+order_summary
+barplot(order_summary$chosen)
+sd(order_summary$chosen) # 0.127
+
+# simplified model: drop slopes for listeners
+voicing_mdl_simpler <- glmer(chosen_voicing ~ correct_voicing + 
+                       # random intercepts for listeners
+                       (1 | listener) +
+                       # random intercepts and slopes for speakers
+                       (1 + correct_voicing | voice) +
+                       # random intercepts and slopes for word pairs
+                       (1 + correct_voicing | item_pair) +
+                       # random intercepts and slopes for trial order
+                       (1 + correct_voicing | order),
+                     data = incomplete,
+                     family = 'binomial')
+# singular fit, simplyfy again
+
+# simplified model 2: drop slopes for listeners and order
+voicing_mdl_simpler2 <- glmer(chosen_voicing ~ correct_voicing + 
+                       # random intercepts for listeners
+                       (1 | listener) +
+                       # random intercepts and slopes for speakers
+                       (1 + correct_voicing | voice) +
+                       # random intercepts and slopes for word pairs
+                       (1 + correct_voicing | item_pair) +
+                       # random intercepts for trial order
+                       (1 | order),
+                     data = incomplete,
+                     family = 'binomial')
+# singular fit, simplify again
+
+# simplified model 3: drop slopes for listeners, pairs, and order
+voicing_mdl_simpler3 <- glmer(chosen_voicing ~ correct_voicing + 
+                       # random intercepts for listeners
+                       (1 | listener) +
+                       # random intercepts and slopes for speakers
+                       (1 + correct_voicing | voice) +
+                       # random intercepts for word pairs
+                       (1 | item_pair) +
+                       # random intercepts for trial order
+                       (1 | order),
+                     data = incomplete,
+                     family = 'binomial')
+# singular fit, simplify again
+
+# simplified model 4: drop all random slopes
+voicing_mdl_intercepts <- glmer(chosen_voicing ~ correct_voicing + 
+                       # random intercepts for listeners
+                       (1 | listener) +
+                       # random intercepts for speakers
+                       (1 | voice) +
+                       # random intercepts for word pairs
+                       (1 | item_pair) +
+                       # random intercepts for trial order
+                       (1 | order),
+                     data = incomplete,
+                     family = 'binomial')
 ```
 
 ### (B) Interpret the model output
@@ -98,8 +200,29 @@ Interpret the model coefficients and calculate p-values for the relevant predict
 ```{r}
 #| label: interpretation
 
-# YOUR CODE HERE
+# model summary
+summary(voicing_mdl_intercepts)
 
+# interpretation:
+## intercept = -0.033 logits; probability of choosing 'voiceless' when true voicing is 'voiced' is 49.2%
+## slope = 0.522 logit; probability of choosing 'voiceless' when true voicing is 'voiceless' is 0.522 log odds higher than when true voicing is 'voiced' (=62.0%).
+
+# construct null model for hypothesis testing
+null_model <- glmer(chosen_voicing ~ 1 + 
+                       # random intercepts for listeners
+                       (1 | listener) +
+                       # random intercepts for speakers
+                       (1 | voice) +
+                       # random intercepts for word pairs
+                       (1 | item_pair) +
+                       # random intercepts for trial order
+                       (1 | order),
+                     data = incomplete,
+                     family = 'binomial')
+
+# anova to compare full and null model
+anova(null_model, voicing_mdl_intercepts)
+# p-value is <0.0001, probability of encountering the given data if the intended voicing category has no effect on the participants' choice is vanishingly small.
 ```
 
 ### (C) Plot predictions
@@ -111,8 +234,25 @@ Estimating variance components for linear mixed effects models is mathematically
 ```{r}
 #| label: plot_prediction_in
 
-# YOUR CODE HERE
+new_data <- expand.grid(correct_voicing = c("voiced", "voiceless"))
+preds <- predict_response(voicing_mdl_intercepts, new_data)
 
+plot <- 
+  ggplot(preds, 
+         aes(x = x, y = predicted, colour = x)) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high),
+                width = 0.2,
+                colour = "black") +
+  geom_point(size = 5) +
+  scale_colour_manual(values = c("#3AB2C1", "#C50D2C")) +
+  scale_y_continuous(limits = c(0.25,0.75)) +
+  labs(title = "Probability of choosing 'voiceless' based on correct voicing",
+       x = "\n Correct voicing",
+       y = "Probability of choosing 'voiceless'\n",
+       colour = "Correct voicing") +
+  theme_minimal()
+
+plot
 ```
 
 ### (D) OPTIONAL Plot variation across grouping variables
@@ -122,7 +262,7 @@ Compare the descriptive averages for the critical relationship for your grouping
 ```{r}
 #| label: plot_descriptive_in
 
-# YOUR CODE HERE
+# see code above for plots and SDs of grouping variable variability.
 
 ```
 
