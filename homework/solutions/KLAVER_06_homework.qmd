@@ -49,7 +49,7 @@ Winter, B., & Matlock, T. (2013). Making judgments based on similarity and proxi
 #| label: preprocessing
 
 # Load our datasets
-sim <- read_csv("../data/linguistic_similarity.csv")
+sim <- read_csv("../../data/linguistic_similarity.csv")
 
 ```
 
@@ -112,7 +112,7 @@ plot_normal(mean = 100, sd = 40)
 # mean at 80 rather than 100
 plot_normal(mean = 80, sd = 40)
 
-# B DISTRIBUTION
+# B DISTRIBUTION centered on 0
 plot_normal(mean = 0, sd = 40)
 ```
 
@@ -234,8 +234,31 @@ Can you fix the mismatch between the observed data (dark blue line) and the simu
 ```{r}
 #| label: transform
 
-# YOUR CODE HERE
+# take the square root of the distance variable
+sim <- mutate(sim,
+              sqrt_distance = sqrt(Distance))
 
+# check the distribution 
+sim |>
+  ggplot(aes(x = sqrt_distance)) +
+  geom_density(fill = "purple") +
+  theme_minimal()
+
+# specify new priors based on the transformed data
+my_priors_sqrt <- c(prior(normal(8, 4), class  = 'Intercept'),
+               prior(normal(0, 4), class = 'b', coef = 'SemSimilar'))
+
+# run new model
+xmdl_sqrt <- brm(sqrt_distance ~ Sem,
+                 family = gaussian(),
+                 prior = my_priors_sqrt,
+                 data = sim,
+                 seed = 42)
+
+# pp check again
+pp_check(xmdl_sqrt, ndraws = 100)
+
+# this yields a better match between posterior samples and data
 ```
 
 # OPTIONAL (G) specify priors that will reduce the effect of SEM to zero
@@ -245,6 +268,29 @@ Now I want you to specify priors that will dominate the posterior, i.e. they wil
 ```{r}
 #| label: too-strict_priors
 
-# YOUR CODE HERE
+# specify b prior to a very narrow 0
+my_priors_wrong <- c(prior(normal(100, 40), class  = 'Intercept'),
+               prior(normal(0, 2), class = 'b', coef = 'SemSimilar'))
 
+#rerun model
+xmdl_wrong <- brm(Distance ~ Sem,
+                 family = gaussian(),
+                 prior = my_priors_wrong,
+                 data = sim,
+                 seed = 42)
+
+# plot the two conditions
+xmdl_wrong |> 
+  # first extract the samples
+  spread_draws(b_Intercept, b_SemSimilar) |> 
+  # Create two columns that represent the two SEM categories
+  mutate(Different = b_Intercept,
+         Similar = b_Intercept + b_SemSimilar) |> 
+  # and then bring into a long format like the data
+  select(Different, Similar) |> 
+  pivot_longer(everything(), names_to = "Sem", values_to = "Distance") |> 
+  # now we plot
+  ggplot(aes(x = Distance, fill = Sem)) +
+    geom_density() +
+    facet_wrap(Sem ~ .)
 ```
