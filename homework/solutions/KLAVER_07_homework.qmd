@@ -185,10 +185,44 @@ Find a way to extract posterior samples from the model for the `Intercept` and t
 ```{r}
 #| label: plot_predictions
 
-new_data <- expand_grid(log_frequency = seq(1, 6, 0.5),
-                # every Item only has one log freq, how do we generate that nicely?
-                        ItemID = unique(quantese$ItemID),
-                        PartID = unique(quantese$PartID))
+# extract posterior samples
+post_samples_quant <- as_draws_df(quant_mdl_2,
+                                  variable = c("Intercept", "b_log_frequency"))
 
-predicted_draws(quant_mdl_2, new_data)
+# calculate means 
+mean_post_samples <- summarise(post_samples_quant,
+                               mean_int = mean(Intercept),
+                               mean_slope = mean(b_log_frequency))
+
+# calculate 95% Credible intervals using the Equal Tailed Interval method
+post_ci <- ci(post_samples_quant,
+         method = "ETI") |>
+  select(-CI) |>
+  pivot_wider(names_from = Parameter,
+              values_from = c(CI_low, CI_high))
+
+# plot predicted mean linear model on top of data
+ggplot(quantese,
+       aes(x = log_frequency, 
+           y = log_rt)) +
+  # plot raw data
+  geom_point(alpha = 0.5,
+             colour = "turquoise") +
+  # plot mean linear model
+  geom_abline(data = mean_post_samples,
+              aes(slope = mean_slope, 
+                  intercept = mean_int),
+              linewidth = 1) +
+  # plot CI as lines
+  geom_abline(data = post_ci,
+              aes(slope = CI_low_b_log_frequency,
+                  intercept = CI_low_Intercept),
+              linetype = "dashed") +
+  geom_abline(data = post_ci,
+              aes(slope = CI_high_b_log_frequency,
+                  intercept = CI_high_Intercept),
+              linetype = "dashed") +
+  theme_minimal()
+
+
 ```
