@@ -1,0 +1,245 @@
+---
+title: "session08 - homework"
+format: html
+editor: visual
+date: 2025-07-17
+author: Timo Roettger
+execute:
+  error: false
+  warning: false
+  message: false
+  cache: true
+bibliography: ../resources/bibliography.bib
+---
+
+# Preamble: Loading packages and configuration
+
+```{r}
+#| label: data_and_libraries
+#| echo: false
+
+# just run this code chunk
+# function to ignoring the setting of the relative path below when knitting
+run_if_not_knitting <- function(expr) {
+  if (!isTRUE(getOption("knitr.in.progress"))) {
+    eval(expr)
+  }
+}
+
+# nifty code using the pacman package
+# it checks if the packages specified below are installed, if not, they will be installed, if yes, they will be loaded
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(rstudioapi, tidyverse, tidybayes, brms, bayesplot, bayestestR, modelr)
+
+# set the current working directory to the one where this file is
+run_if_not_knitting(current_working_dir <- dirname(rstudioapi::getActiveDocumentContext()$path))
+run_if_not_knitting(setwd(current_working_dir))
+
+# options to increase efficiency of brms models (optional)
+#options(brms.backend = "cmdstanr")
+options(mc.cores = parallel::detectCores())
+
+```
+
+# Exercise
+
+We will be re-analyzing the data from @winter2013making.
+
+```{r}
+#| label: preprocessing_sim
+
+# Load our datasets
+sim <- read_csv("../../data/linguistic_similarity.csv") |> 
+  mutate(Sem = as.factor(Sem),
+         Phon = as.factor(Phon))
+sim
+
+```
+
+We will now retrace the original article's complete analysis. In their original analysis, they were interested in whether (a) semantic similarity between cities, (b) phonological similarity between cities, and (c) their interaction affects how close/far apart participants draw the cities.
+
+## (a) Specify Priors
+
+Specify the model formula and appropriate weakly informative priors for all relevant predictors. Contrast-code the predictors.
+
+```{r}
+#| label: model_formula_sim
+
+# define formula
+mdl_formula <- bf(Distance ~ Sem * Phon)
+
+# get priors
+get_prior(mdl_formula, sim)
+
+# specify priors
+my_priors <- c(prior(normal(100, 40), class  = 'Intercept'),
+               prior(normal(0, 40), class  = 'b'))
+
+# check predictor levels
+contrasts(sim$Sem) 
+contrasts(sim$Phon)
+  # intercept: SemDifferent * PhonDifferent
+```
+
+## (b) Run the appropriate model for the research question
+
+```{r}
+#| label: model_sim
+
+# run bayesian model
+sim_mdl <- brm(mdl_formula,
+               family = gaussian(),
+               prior = my_priors,
+               data = sim,
+               chains = 4,
+                  cores = 4, 
+                  iter = 2000,
+                  warmup = 1000,
+                  thin = 1,
+                  seed = 16)
+
+```
+
+## (c) Posterior predicive check
+
+Check the overall model fit with posterior predictive checks. If the model does not fit the data well, fix the problem (check `06_homework_solutions.qmd` for inspiration).
+
+```{r}
+#| label: model_fit
+
+# check model fit
+pp_check(sim_mdl, ndraws = 100)
+  #observed data has gentle right tail, square-root transformation to fix
+sim <- sim |>
+  mutate(sqrt_distance = sqrt(Distance))
+
+#re-specify model with transformed Distance variable
+my_priors_sqrt <- c(prior(normal(10, 4), class  = 'Intercept'),
+                    prior(normal(0, 4), class  = 'b'))
+
+sim_mdl_sqrt <- brm(sqrt_distance ~ Sem * Phon,
+               family = gaussian(),
+               prior = my_priors_sqrt,
+               data = sim,
+               chains = 4,
+                  cores = 4, 
+                  iter = 2000,
+                  warmup = 1000,
+                  thin = 1,
+                  seed = 16)
+
+# check model fit again
+pp_check(sim_mdl_sqrt, ndraws = 100)
+  # fit is better
+```
+
+## (d) Assess sampling diagnostics
+
+Check that chains are reasonably mixed and that sampling yielded a sufficient number of effective sample size. If there are issues, address them accordingly.
+
+```{r}
+#| label: sampling_diagnostics
+
+# check model specifications
+sim_mdl_sqrt
+  #rhat and ESS are good
+
+# check mixing of chains
+mcmc_plot(sim_mdl_sqrt, type = 'trace')
+  # chains look good
+
+```
+
+## (e) Interpret the results
+
+Now interpret the model relative to the research question and describe uncertainty, visualize posteriors, calculate posterior probabilities of direction, and calculate Bayes Factors for evidence for and against the posterior coefficients being point zero.
+
+(Note: When you want to extract interaction terms like `b_Sem1:Phon1`, you have to put single quotation marks around them because R struggles with interpreting the colon)
+
+```{r}
+#| label: interpret_sim
+
+# examine model output
+sim_mdl_sqrt
+  # credible intervals for slope coefficients (including interaction term) overlap with zero, error is fairly large.
+
+# visualize posteriors
+
+sim_mdl_sqrt |> 
+  spread_draws(b_SemSimilar) |> 
+  ggplot(aes(x = b_SemSimilar)) +
+   stat_halfeye(fill = 'darkorchid3') +
+   geom_vline(xintercept = 0, lty = 'dashed') +
+   labs(x = "Effect of Semantic Similarity",
+        y = "") +
+   theme_minimal()
+
+sim_mdl_sqrt |> 
+  spread_draws(b_PhonSimilar) |> 
+  ggplot(aes(x = b_PhonSimilar)) +
+   stat_halfeye(fill = 'darkorchid3') +
+   geom_vline(xintercept = 0, lty = 'dashed') +
+   labs(x = "Effect of Phonetic Similarity",
+        y = "") +
+   theme_minimal()
+
+sim_mdl_sqrt |> 
+  spread_draws(`b_SemSimilar:PhonSimilar`)|> 
+  ggplot(aes(x = `b_SemSimilar:PhonSimilar`)) +
+   stat_halfeye(fill = 'darkorchid3') +
+   geom_vline(xintercept = 0, lty = 'dashed') +
+   labs(x = "Interaction between Semantic and Phonetic Similarity",
+        y = "") +
+   theme_minimal()
+
+# calculate probability of direction for predictors
+sim_mdl_sqrt |>
+  spread_draws(b_SemSimilar, b_PhonSimilar, `b_SemSimilar:PhonSimilar`) |>
+  select(b_SemSimilar, b_PhonSimilar, `b_SemSimilar:PhonSimilar`) |>
+  p_direction()
+
+# calculate Bayes factor
+# extract posteriors
+posteriors <- sim_mdl_sqrt |>
+  spread_draws(b_SemSimilar, b_PhonSimilar, `b_SemSimilar:PhonSimilar`) |>
+  select(b_SemSimilar, b_PhonSimilar, `b_SemSimilar:PhonSimilar`)
+
+#extract priors
+sim_mdl_priors <- brm(sqrt_distance ~ Sem * Phon,
+               family = gaussian(),
+               prior = my_priors_sqrt,
+               sample_prior = 'only',
+               data = sim,
+               chains = 4,
+                  cores = 4, 
+                  iter = 2000,
+                  warmup = 1000,
+                  thin = 1,
+                  seed = 16)
+
+priors <- sim_mdl_priors |>
+  spread_draws(b_SemSimilar, b_PhonSimilar, `b_SemSimilar:PhonSimilar`) |>
+  select(b_SemSimilar, b_PhonSimilar, `b_SemSimilar:PhonSimilar`)
+
+bayesfactor_parameters(posteriors, priors, direction = "two-sided", null = 0)
+  # inconclusive evidence, anecdotal to moderate in favour of the null  
+```
+
+## (g) Write up your entire analysis:
+
+Posterior distributions of the model indicate that square-root-transformed Distance decreases by an average of -0.58 \[95% Credible Interval: -1.29 - 0.11\] when changing from the Semantically Different to the Semantically Similar condition. Conversely, when changing from the Phonologically Different to the Phonologically Similar condition, square-root-transformed Distance increases by an average of 0.54 \[95% Credible Interval: -0.10 - 1.22\]. The interaction between the Semantically Similar and Phonologically Similar condition additionally decreases the square-root-transformed Distance by an average of -0.20 \[95% Credible Interval: -1.14 - 0.78\].
+
+For the effect of Semantic Similarity, 94.75% of the posterior samples are negative, indicating that positive values are plausible but unlikely (given the data, the model, and priors). Similarly, for the effect of Phonological Similarity, 94.96% of the posterior samples are positive, indicating that negative values are plausible but unlikely. For the interaction effect between Semantic and Phonological Similarity, 66.35% of the posterior samples are negative, indicating that we cannot make confident claims about the direction of the effect.
+
+Subsequently, we calculate the Savage-Dickey density ratio [@DickeyLientz1970-The-Weighted-Li; @WagenmakersLodewyckx2010-Bayesian-hypoth; @roettgermeaningful], i.e., we relate the evidence (the probability of the posterior distribution at point-zero) for the model based on the priors only (i.e., before seeing the data) to the evidence for the model based on both priors and likelihood (i.e., after seeing the data) [e.g., @WetzelsGrasman2010-An-encompassing]. The Savage-Dickey method lets us assess evidence for and against a null hypothesis using Bayes factor. Here, the Bayes factor indicates the degree by which the mass of the posterior distribution has shifted further away from the point null value (relative to the prior distribution). Our analysis yields Bayes factors of 0.35 and 0.30 for the effect of Semantic Similarity and Phonological Similarity respectively, indicating that the probability of the Similarity effect being point null has increased somewhat, suggesting anecdotal to moderate evidence in favour of the null hypothesis that there is no Similarity effect on the Distance measure. For the interaction effect between the two types of similarity, the analysis yields a Bayes factor of 0.14, indicating that the probability of the interaction effect being point null has increased, suggesting moderate evidence in favour of the null hypothesis that there is no interaction effect. [@lee-wagenmakers_Bayesian_book_2014].
+
+## OPTIONAL (h) compare your interpretation to the original findings
+
+YOUR COMPARISON HERE
+
+# References
+
+<!-- References will auto-populate in the refs div below -->
+
+::: {#refs}
+:::
