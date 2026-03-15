@@ -65,8 +65,20 @@ Specify the model formula and appropriate weakly informative priors for all rele
 ```{r}
 #| label: model_formula_sim
 
-my_priors <- #YOUR PRIORS HERE
+# define formula
+mdl_formula <- bf(Distance ~ Sem * Phon)
 
+# get priors
+get_prior(mdl_formula, sim)
+
+# specify priors
+my_priors <- c(prior(normal(100, 40), class  = 'Intercept'),
+               prior(normal(0, 40), class  = 'b'))
+
+# check predictor levels
+contrasts(sim$Sem) 
+contrasts(sim$Phon)
+  # intercept: SemDifferent * PhonDifferent
 ```
 
 ## (b) Run the appropriate model for the research question
@@ -74,7 +86,17 @@ my_priors <- #YOUR PRIORS HERE
 ```{r}
 #| label: model_sim
 
-#YOUR MODEL HERE
+# run bayesian model
+sim_mdl <- brm(mdl_formula,
+               family = gaussian(),
+               prior = my_priors,
+               data = sim,
+               chains = 4,
+                  cores = 4, 
+                  iter = 2000,
+                  warmup = 1000,
+                  thin = 1,
+                  seed = 16)
 
 ```
 
@@ -85,8 +107,30 @@ Check the overall model fit with posterior predictive checks. If the model does 
 ```{r}
 #| label: model_fit
 
-#YOUR CODE HERE
+# check model fit
+pp_check(sim_mdl, ndraws = 100)
+  #observed data has gentle right tail, square-root transformation to fix
+sim <- sim |>
+  mutate(sqrt_distance = sqrt(Distance))
 
+#re-specify model with transformed Distance variable
+my_priors_sqrt <- c(prior(normal(10, 4), class  = 'Intercept'),
+                    prior(normal(0, 4), class  = 'b'))
+
+sim_mdl_sqrt <- brm(sqrt_distance ~ Sem * Phon,
+               family = gaussian(),
+               prior = my_priors_sqrt,
+               data = sim,
+               chains = 4,
+                  cores = 4, 
+                  iter = 2000,
+                  warmup = 1000,
+                  thin = 1,
+                  seed = 16)
+
+# check model fit again
+pp_check(sim_mdl_sqrt, ndraws = 100)
+  # fit is better
 ```
 
 ## (d) Assess sampling diagnostics
@@ -96,7 +140,13 @@ Check that chains are reasonably mixed and that sampling yielded a sufficient nu
 ```{r}
 #| label: sampling_diagnostics
 
-# YOUR CODE HERE
+# check model specifications
+sim_mdl_sqrt
+  #rhat and ESS are good
+
+# check mixing of chains
+mcmc_plot(sim_mdl_sqrt, type = 'trace')
+  # chains look good
 
 ```
 
@@ -109,8 +159,70 @@ Now interpret the model relative to the research question and describe uncertain
 ```{r}
 #| label: interpret_sim
 
-#YOUR CODE HERE
+# examine model output
+sim_mdl_sqrt
+  # credible intervals for slope coefficients (including interaction term) overlap with zero, error is fairly large.
 
+# visualize posteriors
+
+sim_mdl_sqrt |> 
+  spread_draws(b_SemSimilar) |> 
+  ggplot(aes(x = b_SemSimilar)) +
+   stat_halfeye(fill = 'darkorchid3') +
+   geom_vline(xintercept = 0, lty = 'dashed') +
+   labs(x = "Effect of Semantic Similarity",
+        y = "") +
+   theme_minimal()
+
+sim_mdl_sqrt |> 
+  spread_draws(b_PhonSimilar) |> 
+  ggplot(aes(x = b_PhonSimilar)) +
+   stat_halfeye(fill = 'darkorchid3') +
+   geom_vline(xintercept = 0, lty = 'dashed') +
+   labs(x = "Effect of Phonetic Similarity",
+        y = "") +
+   theme_minimal()
+
+sim_mdl_sqrt |> 
+  spread_draws('b_SemSimilar:PhonSimilar')|> 
+  ggplot(aes(x = 'b_SemSimilar:PhonSimilar')) +
+   stat_halfeye(fill = 'darkorchid3') +
+   geom_vline(xintercept = 0, lty = 'dashed') +
+   labs(x = "Interaction between Semantic and Phonetic Similarity",
+        y = "") +
+   theme_minimal()
+
+# calculate probability of direction for predictors
+sim_mdl_sqrt |>
+  spread_draws(b_SemSimilar, b_PhonSimilar) |>
+  select(b_SemSimilar, b_PhonSimilar) |>
+  p_direction()
+
+# calculate Bayes factor
+# extract posteriors
+posteriors <- sim_mdl_sqrt |>
+  spread_draws(b_SemSimilar, b_PhonSimilar) |>
+  select(b_SemSimilar, b_PhonSimilar)
+
+#extract priors
+sim_mdl_priors <- brm(sqrt_distance ~ Sem * Phon,
+               family = gaussian(),
+               prior = my_priors_sqrt,
+               sample_prior = 'only',
+               data = sim,
+               chains = 4,
+                  cores = 4, 
+                  iter = 2000,
+                  warmup = 1000,
+                  thin = 1,
+                  seed = 16)
+
+priors <- sim_mdl_priors |>
+  spread_draws(b_SemSimilar, b_PhonSimilar) |>
+  select(b_SemSimilar, b_PhonSimilar)
+
+bayesfactor_parameters(posteriors, priors, direction = "two-sided", null = 0)
+  # inconclusive evidence, anecdotal to moderate in favour of the null  
 ```
 
 ## (g) Write up your entire analysis:
