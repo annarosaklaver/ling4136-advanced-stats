@@ -1,0 +1,183 @@
+---
+title: "session09 - exercises"
+format: html
+editor: visual
+date: 2025-07-17
+author: Timo Roettger
+execute:
+  error: false
+  warning: false
+  message: false
+  cache: false
+bibliography: ../resources/bibliography.bib
+---
+
+# Preamble: Loading packages and configuration
+
+```{r}
+#| label: data_and_libraries
+#| echo: false
+
+# just run this code chunk
+# function to ignoring the setting of the relative path below when knitting
+run_if_not_knitting <- function(expr) {
+  if (!isTRUE(getOption("knitr.in.progress"))) {
+    eval(expr)
+  }
+}
+
+# nifty code using the pacman package
+# it checks if the packages specified below are installed, if not, they will be installed, if yes, they will be loaded
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(rstudioapi, tidyverse, lme4)
+
+# set the current working directory to the one where this file is
+run_if_not_knitting(current_working_dir <- dirname(rstudioapi::getActiveDocumentContext()$path))
+run_if_not_knitting(setwd(current_working_dir))
+
+```
+
+# Introduction
+
+The main **learning goals** of this week's practical parts are:
+
+-   getting an intuition about the gap between verbal hypotheses and formal hypotheses
+
+# The data
+
+In this dataset, we will be analyzing data from @kilpatrick2023random:
+
+In a nutshell, the authors were interested in whether there is a relationship between the form of a word and its meaning by looking at Japanese Pokemon names.
+
+Let's have a look at the data:
+
+```{r}
+#| label: data
+
+# Load in the dataset and already remove irrelevant stuff:
+pokemon <- read_csv('../../data/Japanese_Pokemon_simplified.csv') |> 
+  select(-`Sum of values`, -Checksum)
+
+# check data set:
+pokemon
+
+```
+
+What you see here are the following variables:
+
+Variables:
+
+`Designation`: source of Pokemon name. Official = the official names of Japanese Pokemon; Elicited = elicited names from naive participants.
+
+(`pokemonname`: Pokemon name in Japanese) removed in simplified data file
+
+`Output`: Pokemon name in transcribed form
+
+`Length`: Amount of phones in name
+
+`Evolution`: Evolution stage of Pokemons: 1 = pre-evolution; 2 = post-evolution, NA = do not evolve
+
+`f` = amount of /f/ sounds in name
+
+`T` = amount of /T/ sounds in name
+
+...
+
+and many more different sounds.
+
+Now imagine researchers want to use this data set to *test* the following hypothesis:
+
+*The evolution stage of a Pokemon is reflected in aspects of its Japanese name*
+
+# Exercise
+
+## A: Preregister your analysis
+
+Take the hypothesis and what you know about the data set and its structure to predict a very specific relationship that you can test. You are allowed to look at the dataset, but do not look at concrete relationships that might be a manifestation of the hypothesis.
+
+Specific hypothesis:
+
+There is a correlation between the evolution stage of a Pokemon and the length of its Japanese name.
+
+## B: Run your preregistered analysis
+
+Run the preregistered analysis made in (A) above and interpret your results relative to the hypothesis.
+
+```{r}
+#| label: length ~ evolution stage 
+
+# make evolution stage a factor
+pokemon <- mutate(pokemon, 
+                  Evolution = as.factor(Evolution))
+
+# specify linear model
+length_model <- lm(Length ~ Evolution, data = pokemon)
+
+summary(length_model)
+
+# intercept: average length of name for evolution 1 = 6.98
+# Evolution: average length of name increases by 1.28 when changing to evo 2
+# p-value for slope <0.001, aka significant correlation between evolution stage and name length
+# conclusion: evolution stage is reflected in the name
+```
+
+## C: Show contradicting results
+
+Now explore the data and find two alternative way to test the research hypothesis that yield convincing results that go in opposite directions based of your findings in (A). Justify all your choices verbally after the fact.
+
+Alternative hypothesis 1: There is a correlation between the evolution stage of a Pokemon and the number of high vowels in its Japanese name. (bouba-kiki logic, 'i' sounds are associated with smaller, pointier things)
+
+```{r}
+#| label: high vowels ~ evolution stage
+
+# specify model: simple edition (focusing on i as the prototypical kiki vowel)
+i_model <- lm(i ~ Evolution, data = pokemon)
+
+summary(i_model)
+
+# slope: changing from evo1 to evo2 decreases the number of 'i' sounds in the name by 0.0009. p = 0.981, no significant correlation between evolution stage and number of 'i' sounds
+# conclusion: evolution stage is not reflected in the name
+
+# do a slightly more thorough check of vowel bouba-kiki effect, using proportion of kiki vowels compared to total vowels in name (kiki ratio)
+pokemon <- pokemon |>
+  mutate(high_vowels = e + i + u,
+         low_vowels = a + o) |>
+  mutate(kiki_ratio = high_vowels/(low_vowels + high_vowels))
+
+kiki_model <- lm(kiki_ratio ~ Evolution, data = pokemon)
+
+summary(kiki_model)
+# slope: changing from evo1 to evo2 decreases the kiki ratio by 0.014. p = 0.275, no significant correlation between evolution stage and kiki ratio
+# conclusion: evolution stage is not reflected in the name.
+```
+
+Alternative hypothesis 2: There is a correlation between the evolution stage of a Pokemon and the proportion of long vowels in its Japanese name. (Higher evolutions have longer names because they are somehow bigger/more).
+
+```{r}
+#| label: long vowels ~ evolution stage
+
+# calculate proportion long vowels per length of name
+
+pokemon <- pokemon |>
+  filter(Length != 1) |>
+  # exclude R from length total because it doesn't represent an actual sound, just signals that the preceding vowel is long
+  mutate(long_vowels = R / (Length - R))
+  
+# specify model
+long_model <- lm(long_vowels ~ Evolution, data = pokemon)
+
+summary(long_model)
+# slope: changing from evo1 to evo2 increases the proportion of long vowel in the name by 0.006. p = 0.215, no significant correlation between evolution stage and proportion of long vowels
+# conclusion: evolution stage is not reflected in the name.
+```
+
+## D: Researcher degrees of freedom
+
+Note down all dimensions of researcher degrees of freedom that make the mapping of the hypothesis onto your data analysis vague. How many possible combinations can you think of?
+
+# References
+
+<!-- References will auto-populate in the refs div below -->
+
+::: {#refs}
+:::
