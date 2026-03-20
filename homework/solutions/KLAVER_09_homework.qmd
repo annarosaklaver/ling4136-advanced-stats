@@ -125,7 +125,7 @@ summary(length_model)
 
 Now explore the data and find two alternative way to test the research hypothesis that yield convincing results that go in opposite directions based of your findings in (A). Justify all your choices verbally after the fact.
 
-Alternative hypothesis 1: There is a correlation between the evolution stage of a Pokemon and the number of high vowels in its Japanese name. (bouba-kiki logic, 'i' sounds are associated with smaller, pointier things)
+Alternative hypothesis 1: There is a correlation between the evolution stage of a Pokemon and the number of high vowels in its Japanese name. (bouba-kiki logic, high vowels are associated with smaller, pointier things)
 
 ```{r}
 #| label: high vowels ~ evolution stage
@@ -174,6 +174,22 @@ summary(long_model)
 ## D: Researcher degrees of freedom
 
 Note down all dimensions of researcher degrees of freedom that make the mapping of the hypothesis onto your data analysis vague. How many possible combinations can you think of?
+
+-   interpretation of 'reflected in' and 'aspects of its Japanese name'
+
+    -   what specific aspects are we interested in?
+
+    -   what direction of effect are we testing? is evolution stage the predicted variable or the predictor?
+
+-   choice of predictors and mediating variables
+
+    -   how do we operationalise said aspects as measurable variables?
+
+    -   do we include mediating variables? if yes: which ones?
+
+-   choice of model
+
+-   choice of statistical tests
 
 # References
 
